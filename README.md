@@ -64,10 +64,11 @@ template.yaml          the whole infrastructure: role, table, queue, functions, 
 spec/SPEC.md            the exercise: requirements, acceptance criteria, order of work
 src/api/index.mjs       the router for the three routes (stub)
 src/notifier/index.mjs  the SQS consumer (stub)
-scripts/emulator.sh     start/stop the emulator and write the env file
-scripts/deploy.sh       package, upload, create or update the stack, poll it
+scripts/emulator.sh     start/stop the emulator and write the env files
+scripts/deploy.sh       package, upload, create or recreate the stack, poll it
 scripts/destroy.sh      delete the stack and the bucket
-tests/e2e.sh            the acceptance contract, one block per requirement
+scripts/invoke.sh       call a route by hand without touching resource ids
+tests/e2e.sh            the minimal harness, one block per requirement
 ```
 
 ## How the API is tested
@@ -84,6 +85,19 @@ It really invokes the Lambda with a proxy event (`body` as a **string**,
 `httpMethod`, `path`, `pathParameters`) and returns the status, the body and an
 execution log. `template.yaml` also leaves out a Deployment and a Stage for the
 same reason; add them when you care about a real HTTP endpoint.
+
+To skip the resource-id dance while you are working, use the wrapper — it works
+the same from bash, zsh and fish:
+
+```bash
+./scripts/invoke.sh POST /observations '{"sku":"MLA-1","precio":100}'
+./scripts/invoke.sh GET  '/products/{sku}' /products/MLA-1
+./scripts/invoke.sh PUT  '/products/{sku}' /products/MLA-1 '{"precioObjetivo":90}'
+```
+
+The first argument after the method is the **template** path, the second is what
+the request actually carries. That is why `/products/{sku}` gets a second path
+and `/observations` does not.
 
 ## What is verified on the local emulator
 
