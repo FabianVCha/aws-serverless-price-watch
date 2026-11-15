@@ -67,7 +67,9 @@ invoke() {
   rid=$(resolve "$route") || { printf 'ERR\tresource %s not found' "$route"; return 0; }
   local args=(--rest-api-id "$API_ID" --resource-id "$rid" --http-method "$method")
   [ -n "$body" ] && args+=(--body "$body")
-  [ "$concrete" != "/observations" ] && args+=(--path-with-query-string "$concrete")
+  # Always pass the path: without it the emulator moves the body into
+  # event.path and event.body arrives null.
+  args+=(--path-with-query-string "$concrete")
   aws apigateway test-invoke-method "${args[@]}" --output json 2>&1 | python3 -c '
 import json, sys
 raw = sys.stdin.read()

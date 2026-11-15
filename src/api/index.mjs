@@ -24,6 +24,9 @@ export const handler = async (event) => {
     resource: event.resource,
     path: event.path,
     pathParameters: event.pathParameters ?? null,
+    bodyType: typeof event.body,
+    bodyLength: typeof event.body === 'string' ? event.body.length : null,
+    keys: Object.keys(event).join(','),
   }));
 
   switch (`${event.httpMethod} ${event.resource}`) {

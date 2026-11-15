@@ -30,6 +30,11 @@ with the value `SKU#<sku>`.
 Rules: `sku` 3-40 characters, `precio` a number greater than 0, `capturadoEn`
 ISO-8601. Store one item per `(sku, capturadoEn)` pair.
 
+`event.body` arrives as a JSON **string**, exactly like real API Gateway, so
+you must `JSON.parse` it (and reject the payload when the parse throws). If it
+arrives as `null`, the request was sent without `--path-with-query-string` and
+the emulator moved the body elsewhere — that is a harness bug, not yours.
+
 Acceptance:
 - the first call answers 200 or 201;
 - the same body sent twice answers `{"duplicado": true}` the second time;

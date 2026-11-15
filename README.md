@@ -130,6 +130,12 @@ Facts measured on `aws-emulator` 1.0.322, not copied from documentation:
 4. **`get-queue-attributes`** accepts one attribute name per call.
 5. **`get-resources`** can return an empty list right after the API is created.
    Retry before resolving the root resource.
+6. **`test-invoke-method` needs `--path-with-query-string`, always.** Without
+   that flag the emulator writes the request body into `event.path` and leaves
+   `event.body` as `null`, which looks exactly like a handler that cannot read
+   its input. With the flag, `event.body` is the JSON **string** the request
+   carried, same as real API Gateway. `scripts/invoke.sh` and `tests/e2e.sh`
+   pass it for you.
 
 ## What this is not
 

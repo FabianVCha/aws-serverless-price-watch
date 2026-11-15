@@ -10,7 +10,9 @@
 # Usage: invoke.sh METHOD ROUTE [CONCRETE_PATH] [BODY]
 #   ROUTE          the template path, e.g. /products/{sku}
 #   CONCRETE_PATH  what the request carries, e.g. /products/MLA-1
-#                  (defaults to ROUTE; pass it for routes with a parameter)
+#                  (only for routes with a parameter; a third argument that
+#                  does not start with / is taken as the body)
+#   BODY           JSON text
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,8 +26,17 @@ fi
 
 METHOD=$1
 ROUTE=$2
-CONCRETE=${3:-$2}
-BODY=${4:-}
+
+# Third argument is the concrete path when it looks like a path, otherwise it is
+# the body. Without this, `invoke.sh POST /observations '{"sku":"X"}'` would send
+# the JSON as the request path.
+if [ $# -ge 3 ] && [ "${3#/}" != "$3" ]; then
+  CONCRETE=$3
+  BODY=${4:-}
+else
+  CONCRETE=$ROUTE
+  BODY=${3:-}
+fi
 
 if [ ! -f .emulator.env ]; then
   echo "missing .emulator.env - run 'make up' first" >&2
@@ -65,9 +76,10 @@ fi
 
 ARGS=(--rest-api-id "$API_ID" --resource-id "$RESOURCE_ID" --http-method "$METHOD")
 [ -n "$BODY" ] && ARGS+=(--body "$BODY")
-if [ "$CONCRETE" != "$ROUTE" ]; then
-  ARGS+=(--path-with-query-string "$CONCRETE")
-fi
+# ALWAYS pass the path, even for routes without parameters. Without it the
+# emulator drops the body into event.path and leaves event.body null, which
+# looks like a broken handler.
+ARGS+=(--path-with-query-string "$CONCRETE")
 
 aws apigateway test-invoke-method "${ARGS[@]}" --output json 2>&1 | python3 -c '
 import json, sys
