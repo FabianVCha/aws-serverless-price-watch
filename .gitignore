@@ -1,0 +1,13 @@
+# Local emulator state and build output
+.emulator.env
+.emulator.pid
+.emulator.log
+.build/
+node_modules/
+coverage/
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp

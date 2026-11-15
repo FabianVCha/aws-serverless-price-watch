@@ -1,0 +1,211 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Price Watch - serverless price tracking on AWS (runs on aws-emulator or real AWS)
+
+# One template for both targets: the emulator and real AWS. Only the endpoint
+# changes (AWS_ENDPOINT_URL), never the template.
+#
+# Deploying requires CAPABILITY_NAMED_IAM because the role below is named.
+
+Parameters:
+  ArtifactBucket:
+    Type: String
+    Description: Bucket that holds the function zip files (created by scripts/deploy.sh)
+  ApiCodeKey:
+    Type: String
+    Description: S3 key of the api function package
+  NotifierCodeKey:
+    Type: String
+    Description: S3 key of the notifier function package
+
+Resources:
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: price-watch-function-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      # Inline policy instead of a managed policy: no dependency on an AWS
+      # managed policy ARN, so the same template works on the emulator.
+      Policies:
+        - PolicyName: price-watch-function-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                Resource: !GetAtt EventsTable.Arn
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  # An event source mapping polls the queue on behalf of the
+                  # function, so the role needs these three as well.
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt AlertsQueue.Arn
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: price-watch-events
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+
+  AlertsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: price-watch-alerts
+      VisibilityTimeout: 30
+
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: price-watch-api
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EventsTable
+          QUEUE_URL: !Ref AlertsQueue
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref ApiCodeKey
+
+  NotifierFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: price-watch-notifier
+      Runtime: nodejs22.x
+      Handler: index.handler
+      Role: !GetAtt FunctionRole.Arn
+      Timeout: 10
+      MemorySize: 256
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EventsTable
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref NotifierCodeKey
+
+  AlertsMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      FunctionName: !Ref NotifierFunction
+      EventSourceArn: !GetAtt AlertsQueue.Arn
+      BatchSize: 5
+
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: price-watch
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  ObservationsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: observations
+
+  ObservationsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ObservationsResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
+
+  ProductsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: products
+
+  SkuResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !Ref ProductsResource
+      PathPart: '{sku}'
+
+  ProductGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SkuResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.path.sku: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
+
+  ProductPutMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref SkuResource
+      HttpMethod: PUT
+      AuthorizationType: NONE
+      RequestParameters:
+        method.request.path.sku: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiFunction.Arn}/invocations
+
+  # TODO(phase 5): a Deployment and a Stage are what make the API reachable
+  # over execute-api. The emulator has no execute-api URL, so tests use
+  # `aws apigateway test-invoke-method` instead. Add these two resources when
+  # you care about a real HTTP endpoint.
+
+Outputs:
+  RestApiId:
+    Description: API Gateway REST API id (use it with test-invoke-method)
+    Value: !Ref RestApi
+  TableName:
+    Description: DynamoDB table holding observations and targets
+    Value: !Ref EventsTable
+  QueueUrl:
+    Description: SQS queue that carries price alerts
+    Value: !Ref AlertsQueue
+  ApiFunctionName:
+    Value: !Ref ApiFunction
+  NotifierFunctionName:
+    Value: !Ref NotifierFunction
