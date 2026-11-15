@@ -36,11 +36,23 @@ proves the happy path; the assertions that matter are part of the exercise.
 ## Quick start
 
 ```bash
-make up        # start the emulator and write .emulator.env
+make up        # start the emulator and write .emulator.env (+ .emulator.env.fish)
 make deploy    # package both functions, upload them, create the stack
-make e2e       # the full acceptance suite (fails until you implement the spec)
+make e2e       # the full cycle against the minimal harness (red until you implement the spec)
 make destroy   # delete the stack and the artifact bucket
 make down      # stop the emulator
+```
+
+To use the AWS CLI in your own terminal after `make up`, source the file for
+your shell — they are two files because the shells disagree on how to unset a
+variable:
+
+```bash
+source .emulator.env        # bash, zsh
+```
+
+```fish
+source .emulator.env.fish   # fish: `unset` does not exist there
 ```
 
 `make e2e` does the whole cycle by itself: up, deploy, test, down.

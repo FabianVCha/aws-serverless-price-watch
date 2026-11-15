@@ -1,5 +1,6 @@
 # Local emulator state and build output
 .emulator.env
+.emulator.env.fish
 .emulator.pid
 .emulator.log
 .build/

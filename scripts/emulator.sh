@@ -11,6 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${PORT:-9297}"
 ENVFILE="$ROOT/.emulator.env"
+FISHFILE="$ROOT/.emulator.env.fish"
 PIDFILE="$ROOT/.emulator.pid"
 LOGFILE="$ROOT/.emulator.log"
 STATE_DIR="$HOME/.aws/emulator/$PORT"
@@ -19,9 +20,44 @@ is_running() {
   [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null
 }
 
+# Two files, one per shell family. Fish 4 accepts `export VAR=value` but has no
+# `unset` (it uses `set -e`), and a file that tried to serve both shells would
+# leave real credentials in the environment under one of them.
+write_env() {
+  cat >"$ENVFILE" <<EOF
+export AWS_ENDPOINT_URL=https://127.0.0.1:$PORT
+export AWS_SHARED_CREDENTIALS_FILE=$STATE_DIR/emulator_credentials
+export AWS_CONFIG_FILE=$STATE_DIR/config
+export AWS_CA_BUNDLE=$STATE_DIR/ca.pem
+export AWS_EC2_METADATA_DISABLED=true
+export AWS_DISABLE_HOST_PREFIX_INJECTION=true
+export AWS_REGION=us-east-1
+export AWS_DEFAULT_REGION=us-east-1
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+EOF
+
+  cat >"$FISHFILE" <<EOF
+set -gx AWS_ENDPOINT_URL https://127.0.0.1:$PORT
+set -gx AWS_SHARED_CREDENTIALS_FILE $STATE_DIR/emulator_credentials
+set -gx AWS_CONFIG_FILE $STATE_DIR/config
+set -gx AWS_CA_BUNDLE $STATE_DIR/ca.pem
+set -gx AWS_EC2_METADATA_DISABLED true
+set -gx AWS_DISABLE_HOST_PREFIX_INJECTION true
+set -gx AWS_REGION us-east-1
+set -gx AWS_DEFAULT_REGION us-east-1
+set -e AWS_ACCESS_KEY_ID
+set -e AWS_SECRET_ACCESS_KEY
+set -e AWS_SESSION_TOKEN
+set -e AWS_PROFILE
+EOF
+}
+
 start() {
   if is_running; then
     echo "emulator already running (pid $(cat "$PIDFILE"), port $PORT)"
+    write_env
+    echo "  bash/zsh: source .emulator.env"
+    echo "  fish:     source .emulator.env.fish"
     return 0
   fi
   if ! command -v aws-emulator >/dev/null 2>&1; then
@@ -46,18 +82,10 @@ start() {
     exit 1
   fi
 
-  cat >"$ENVFILE" <<EOF
-export AWS_ENDPOINT_URL=https://127.0.0.1:$PORT
-export AWS_SHARED_CREDENTIALS_FILE=$STATE_DIR/emulator_credentials
-export AWS_CONFIG_FILE=$STATE_DIR/config
-export AWS_CA_BUNDLE=$STATE_DIR/ca.pem
-export AWS_EC2_METADATA_DISABLED=true
-export AWS_DISABLE_HOST_PREFIX_INJECTION=true
-export AWS_REGION=us-east-1
-export AWS_DEFAULT_REGION=us-east-1
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
-EOF
-  echo "healthy on https://127.0.0.1:$PORT (env written to .emulator.env)"
+  write_env
+  echo "healthy on https://127.0.0.1:$PORT"
+  echo "  bash/zsh: source .emulator.env"
+  echo "  fish:     source .emulator.env.fish"
 }
 
 stop() {
@@ -81,5 +109,6 @@ case "${1:-status}" in
     if is_running; then echo "running (pid $(cat "$PIDFILE"), port $PORT)"; else echo "stopped"; fi
     ;;
   env) cat "$ENVFILE" ;;
-  *) echo "usage: $0 {up|down|status|env}" >&2; exit 2 ;;
+  env-fish) cat "$FISHFILE" ;;
+  *) echo "usage: $0 {up|down|status|env|env-fish}" >&2; exit 2 ;;
 esac
