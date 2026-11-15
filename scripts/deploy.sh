@@ -146,5 +146,20 @@ else
   echo "stack unchanged, still deployed"
 fi
 
+# The table accepts writes only after it reports ACTIVE (~3 s after creation).
+# Waiting here means the first request after `make deploy` does not fail with
+# ResourceNotFoundException that has nothing to do with the handler.
+table=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='TableName'].OutputValue" --output text 2>/dev/null | tail -1 || true)
+if [ -n "$table" ] && [ "$table" != "None" ]; then
+  for _ in $(seq 1 60); do
+    st=$(aws dynamodb describe-table --table-name "$table" \
+         --query 'Table.TableStatus' --output text 2>/dev/null | tail -1 || true)
+    [ "$st" = "ACTIVE" ] && break
+    sleep 0.5
+  done
+  echo "table $table is ${st:-unknown}"
+fi
+
 aws cloudformation describe-stacks --stack-name "$STACK" \
   --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output text
