@@ -8,7 +8,10 @@
 //   PUT  /products/{sku}         -> setTarget           (spec R3)
 //
 // The proxy event gives you: event.body (a STRING, not an object),
-// event.pathParameters, event.httpMethod, event.resource.// runtime, so `import { DynamoDBClient } from '@aws-sdk/client-dynamodb'`
+// event.pathParameters, event.httpMethod, event.resource.
+//
+// Verified on the local emulator: the AWS SDK v3 is already inside the Node
+// runtime, so `import { DynamoDBClient } from '@aws-sdk/client-dynamodb'`
 // works without a node_modules folder. Do NOT pass an endpoint override: the
 // emulator already routes the client, and an override breaks the TLS check.
 
@@ -37,9 +40,9 @@ export const handler = async (event) => {
     case 'POST /observations':
       // R1: store one observation, at most once per (sku, capturadoEn).
       {const body = JSON.parse(event.body);
-        if(body.precio > 0){
-          if(Date.parse(body.capturadoEn))
-            {if(body.sku && body.sku.length>3 && body.sku.length<40){
+        if(body.precio > 0  && typeof body.precio === 'number'){
+          if(!Number.isNaN(Date.parse(body.capturadoEn)))
+            {if(body.sku && body.sku.length>=3 && body.sku.length<=40){
               try{
                 await doc.send(new PutCommand({
                   TableName: process.env.TABLE_NAME,
