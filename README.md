@@ -62,7 +62,8 @@ source .emulator.env.fish   # fish: `unset` does not exist there
 ```
 template.yaml          the whole infrastructure: role, table, queue, functions, API, mapping
 spec/SPEC.md            the exercise: requirements, acceptance criteria, order of work
-src/api/index.mjs       the router for the three routes (stub)
+docs/TECH-DEBT.md       deliberate debt and non-goals, revisited at the end
+src/api/index.mjs       the router: R1 implemented, R2 and R3 still stubs
 src/notifier/index.mjs  the SQS consumer (stub)
 scripts/emulator.sh     start/stop the emulator and write the env files
 scripts/deploy.sh       package, upload, create or recreate the stack, poll it

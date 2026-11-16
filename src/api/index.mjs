@@ -39,7 +39,12 @@ export const handler = async (event) => {
   switch (`${event.httpMethod} ${event.resource}`) {
     case 'POST /observations':
       // R1: store one observation, at most once per (sku, capturadoEn).
-      {const body = JSON.parse(event.body);
+      {let body;
+        try{
+          body = JSON.parse(event.body);
+        } catch {
+          return json(400, { error: 'json_invalido'});
+        }
         if(body.precio > 0  && typeof body.precio === 'number'){
           if(!Number.isNaN(Date.parse(body.capturadoEn)))
             {if(body.sku && body.sku.length>=3 && body.sku.length<=40){
