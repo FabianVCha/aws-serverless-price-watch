@@ -8,12 +8,16 @@
 //   PUT  /products/{sku}         -> setTarget           (spec R3)
 //
 // The proxy event gives you: event.body (a STRING, not an object),
-// event.pathParameters, event.httpMethod, event.resource.
-//
-// Verified on the local emulator: the AWS SDK v3 is already inside the Node
-// runtime, so `import { DynamoDBClient } from '@aws-sdk/client-dynamodb'`
+// event.pathParameters, event.httpMethod, event.resource.// runtime, so `import { DynamoDBClient } from '@aws-sdk/client-dynamodb'`
 // works without a node_modules folder. Do NOT pass an endpoint override: the
 // emulator already routes the client, and an override breaks the TLS check.
+
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+
+const doc = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
+  marshallOptions: { removeUndefinedValues: true },
+});
 
 export const handler = async (event) => {
   // Keep this line: it is the fastest way to see the proxy event's real shape.
@@ -31,7 +35,42 @@ export const handler = async (event) => {
 
   switch (`${event.httpMethod} ${event.resource}`) {
     case 'POST /observations':
-      // TODO(R1): validate, write idempotently, alert when below target.
+      // R1: store one observation, at most once per (sku, capturadoEn).
+      {const body = JSON.parse(event.body);
+        if(body.precio > 0){
+          if(Date.parse(body.capturadoEn))
+            {if(body.sku && body.sku.length>3 && body.sku.length<40){
+              try{
+                await doc.send(new PutCommand({
+                  TableName: process.env.TABLE_NAME,
+                  Item: {
+                    // One partition per product, one item per observation:
+                    // the history is the set of items, not an array inside one.
+                    pk: `SKU#${body.sku}`,
+                    sk: `OBS#${body.capturadoEn}`,
+                    precio: body.precio,
+                    moneda: body.moneda,
+                    url: body.url,
+                    capturadoEn: body.capturadoEn,
+                  },
+                  // Check and write are one atomic operation, so the same
+                  // observation sent twice is rejected, never duplicated.
+                  ConditionExpression: 'attribute_not_exists(pk)',
+                }));
+                return json(201, {creado: true });
+              }catch(err){
+                // A duplicate is a normal outcome, not a failure.
+                if(err.name === 'ConditionalCheckFailedException'){
+                  return json(200, {duplicado: true});
+                }
+                throw err;
+              }
+              
+              }
+            };
+          };
+        // Anything that failed validation is rejected, never stored.
+        return json(400, {received: "error"})}
       break;
     case 'GET /products/{sku}':
       // TODO(R2): read the history and return the stats.
